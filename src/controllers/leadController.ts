@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
-import { Lead, ILead } from '../models/Lead';
-import { User, IUser } from '../models/User';
+import { Request, Response } from 'express';
+import { Lead } from '../models/Lead';
+import { IUser } from '../models/User';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { createObjectCsvWriter } from 'csv-writer';
-import { Readable } from 'stream';
+import { CreditService } from '../services/creditService';
 
 interface LeadFilters {
   nicho?: string;
@@ -21,7 +21,7 @@ interface LeadFilters {
 // @desc    Gerar leads baseado em filtros
 // @route   POST /api/leads/generate
 // @access  Private
-export const generateLeads = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const generateLeads = asyncHandler(async (req: Request, res: Response) => {
   const filters: LeadFilters = req.body;
   const user = req.user as IUser;
 
@@ -78,17 +78,10 @@ export const generateLeads = asyncHandler(async (req: Request, res: Response, ne
     throw createError('Nenhum lead encontrado com os filtros especificados.', 404);
   }
 
-  // Usar créditos do usuário
-  user.useCredits(leads.length);
+  // Debitar créditos do usuário
+  await CreditService.debitCredits((user._id as any).toString(), leads.length);
 
-  // Adicionar ao histórico de busca
-  user.addSearchHistory({
-    filters,
-    date: new Date(),
-    totalLeads: leads.length,
-    creditsUsed: leads.length
-  });
-
+  // Atualizar o usuário após debitar créditos
   await user.save();
 
   // Preparar dados para CSV
@@ -107,7 +100,7 @@ export const generateLeads = asyncHandler(async (req: Request, res: Response, ne
   // Gerar CSV
   const csvWriter = createObjectCsvWriter({
     path: `temp/leads_${user._id}_${Date.now()}.csv`,
-    header: Object.keys(csvData[0]).map(key => ({ id: key, title: key }))
+    header: Object.keys(csvData[0] || {}).map(key => ({ id: key, title: key }))
   });
 
   await csvWriter.writeRecords(csvData);
@@ -127,7 +120,7 @@ export const generateLeads = asyncHandler(async (req: Request, res: Response, ne
 // @desc    Download CSV
 // @route   GET /api/leads/download/:filename
 // @access  Private
-export const downloadCsv = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const downloadCsv = asyncHandler(async (req: Request, res: Response) => {
   const { filename } = req.params;
   const filePath = `temp/${filename}`;
 
@@ -154,18 +147,14 @@ export const downloadCsv = asyncHandler(async (req: Request, res: Response, next
 // @desc    Obter histórico de buscas
 // @route   GET /api/leads/history
 // @access  Private
-export const getSearchHistory = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const user = await User.findById(req.user!._id).select('searchHistory');
-
-  if (!user) {
-    throw createError('Usuário não encontrado.', 404);
-  }
-
+export const getSearchHistory = asyncHandler(async (_req: Request, res: Response) => {
+  // Por enquanto, retornar histórico vazio
+  // TODO: Implementar histórico de buscas no modelo User
   res.json({
     success: true,
     data: {
-      history: user.searchHistory || [],
-      totalSearches: user.searchHistory?.length || 0
+      history: [],
+      totalSearches: 0
     }
   });
 });
@@ -173,7 +162,7 @@ export const getSearchHistory = asyncHandler(async (req: Request, res: Response,
 // @desc    Obter estatísticas de leads
 // @route   GET /api/leads/stats
 // @access  Private
-export const getLeadStats = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const getLeadStats = asyncHandler(async (_req: Request, res: Response) => {
   const stats = await Lead.aggregate([
     { $match: { isActive: true } },
     {
@@ -212,7 +201,7 @@ export const getLeadStats = asyncHandler(async (req: Request, res: Response, nex
 // @desc    Buscar leads por filtros (sem usar créditos)
 // @route   GET /api/leads/search
 // @access  Private
-export const searchLeads = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const searchLeads = asyncHandler(async (req: Request, res: Response) => {
   const { nicho, cidade, estado, pais, idadeMin, idadeMax, limit = 10 } = req.query;
 
   const query: any = { isActive: true };

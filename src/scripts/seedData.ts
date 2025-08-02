@@ -53,7 +53,16 @@ const gerarTelefone = (): string => {
 };
 
 const gerarEmail = (nome: string): string => {
-  const nomeLimpo = nome.toLowerCase().replace(/\s+/g, '');
+  // Remove acentos e caracteres especiais
+  const nomeLimpo = nome.toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[àáâãäå]/g, 'a')
+    .replace(/[èéêë]/g, 'e')
+    .replace(/[ìíîï]/g, 'i')
+    .replace(/[òóôõö]/g, 'o')
+    .replace(/[ùúûü]/g, 'u')
+    .replace(/[ç]/g, 'c')
+    .replace(/[^a-z0-9]/g, '');
   const dominio = dominios[Math.floor(Math.random() * dominios.length)];
   const numero = Math.floor(Math.random() * 1000);
   return `${nomeLimpo}${numero}@${dominio}`;

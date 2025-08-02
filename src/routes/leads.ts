@@ -1,6 +1,15 @@
 import express, { Request, Response } from 'express';
 import { query, validationResult } from 'express-validator';
 import { Lead } from '../models/Lead';
+import { 
+  generateLeads, 
+  downloadCsv, 
+  getSearchHistory, 
+  getLeadStats, 
+  searchLeads 
+} from '../controllers/leadController';
+import { protect } from '../middleware/auth';
+import { requireCredits } from '../middleware/creditCheck';
 
 const router = express.Router();
 
@@ -146,5 +155,30 @@ router.get('/stats', async (_req: Request, res: Response) => {
     });
   }
 });
+
+// @route   POST /api/leads/generate
+// @desc    Gerar leads com filtros (usa créditos)
+// @access  Private
+router.post('/generate', protect, requireCredits(), generateLeads);
+
+// @route   GET /api/leads/download/:filename
+// @desc    Download CSV dos leads gerados
+// @access  Private
+router.get('/download/:filename', protect, downloadCsv);
+
+// @route   GET /api/leads/history
+// @desc    Obter histórico de buscas
+// @access  Private
+router.get('/history', protect, getSearchHistory);
+
+// @route   GET /api/leads/stats
+// @desc    Obter estatísticas de leads
+// @access  Private
+router.get('/stats', protect, getLeadStats);
+
+// @route   GET /api/leads/search
+// @desc    Buscar leads por filtros (sem usar créditos)
+// @access  Private
+router.get('/search', protect, searchLeads);
 
 export default router; 

@@ -1,9 +1,10 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import Stripe from 'stripe';
-import { User, IUser } from '../models/User';
+import { IUser } from '../models/User';
 import { createError, asyncHandler } from '../middleware/errorHandler';
+import { CreditService } from '../services/creditService';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const stripe = new Stripe(process.env['STRIPE_SECRET_KEY']!, {
   apiVersion: '2023-10-16'
 });
 
@@ -14,113 +15,137 @@ const PACKAGE_PRICES = {
   '5000': 399000  // R$ 3.990,00
 };
 
-// @desc    Criar payment intent
-// @route   POST /api/payments/create-intent
+// @desc    Criar checkout com Stripe
+// @route   POST /api/payments/checkout
 // @access  Private
-export const createPaymentIntent = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const { amount, package: packageType } = req.body;
+export const createCheckout = asyncHandler(async (req: Request, res: Response) => {
+  const { package: packageType } = req.body;
   const user = req.user as IUser;
 
   // Verificar se o pacote é válido
   if (!PACKAGE_PRICES[packageType as keyof typeof PACKAGE_PRICES]) {
-    throw createError('Pacote inválido.', 400);
+    throw createError('Pacote inválido. Pacotes disponíveis: 100, 1000, 5000', 400);
   }
 
+  const credits = parseInt(packageType);
   const price = PACKAGE_PRICES[packageType as keyof typeof PACKAGE_PRICES];
 
   try {
     // Criar ou obter customer no Stripe
-    let customerId = user.stripeCustomerId;
+    let customerId = (user as any).stripeCustomerId;
 
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
         name: user.name,
         metadata: {
-          userId: user._id.toString()
+          userId: (user._id as any).toString()
         }
       });
 
       customerId = customer.id;
-      user.stripeCustomerId = customerId;
+              (user as any).stripeCustomerId = customerId;
       await user.save();
     }
 
-    // Criar payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: price,
-      currency: 'brl',
+    // Criar checkout session
+    const session = await stripe.checkout.sessions.create({
       customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'brl',
+            product_data: {
+              name: `${credits} Créditos LeadForge`,
+              description: `Pacote de ${credits} créditos para geração de leads`,
+            },
+            unit_amount: price,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${process.env['FRONTEND_URL']}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env['FRONTEND_URL']}/payment/cancel`,
       metadata: {
-        userId: user._id.toString(),
-        credits: amount,
+                  userId: (user._id as any).toString(),
+        credits: credits.toString(),
         package: packageType
-      },
-      automatic_payment_methods: {
-        enabled: true,
       },
     });
 
     res.json({
       success: true,
       data: {
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
+        checkoutUrl: session.url,
+        sessionId: session.id,
         amount: price,
-        credits: amount
+        credits: credits
       }
     });
   } catch (error) {
-    console.error('Erro ao criar payment intent:', error);
-    throw createError('Erro ao processar pagamento.', 500);
+    console.error('Erro ao criar checkout:', error);
+    throw createError('Erro ao processar checkout.', 500);
   }
 });
 
-// @desc    Confirmar pagamento
-// @route   POST /api/payments/confirm
-// @access  Private
-export const confirmPayment = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  const { paymentIntentId, amount } = req.body;
-  const user = req.user as IUser;
+// @desc    Webhook para processar pagamentos do Stripe
+// @route   POST /api/payments/webhook
+// @access  Public
+export const webhookPayment = asyncHandler(async (req: Request, res: Response) => {
+  const sig = req.headers['stripe-signature'];
+  const endpointSecret = process.env['STRIPE_WEBHOOK_SECRET'];
+
+  if (!endpointSecret) {
+    throw createError('Webhook secret não configurado.', 500);
+  }
+
+  let event: Stripe.Event;
 
   try {
-    // Verificar payment intent no Stripe
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-
-    if (paymentIntent.status !== 'succeeded') {
-      throw createError('Pagamento não foi confirmado.', 400);
-    }
-
-    // Verificar se o payment intent pertence ao usuário
-    if (paymentIntent.metadata.userId !== user._id.toString()) {
-      throw createError('Payment intent não pertence ao usuário.', 403);
-    }
-
-    // Adicionar créditos ao usuário
-    user.addCredits(amount);
-    await user.save();
-
-    res.json({
-      success: true,
-      data: {
-        message: 'Pagamento confirmado com sucesso!',
-        creditsAdded: amount,
-        totalCredits: user.credits
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao confirmar pagamento:', error);
-    throw createError('Erro ao confirmar pagamento.', 500);
+    event = stripe.webhooks.constructEvent(req.body, sig as string, endpointSecret);
+  } catch (err) {
+    console.error('Erro ao verificar webhook:', err);
+    throw createError('Webhook signature inválida.', 400);
   }
+
+  // Processar apenas eventos de checkout completado
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    
+    try {
+      const userId = session.metadata?.['userId'];
+      const credits = parseInt(session.metadata?.['credits'] || '0');
+
+      if (!userId || credits <= 0) {
+        console.error('Dados inválidos no webhook:', session.metadata);
+        return res.status(400).json({ error: 'Dados inválidos' });
+      }
+
+      // Adicionar créditos ao usuário
+      const user = await CreditService.addCredits(userId, credits);
+
+      console.log(`✅ Créditos adicionados: ${credits} para usuário ${userId}`);
+      console.log(`💰 Novo saldo: ${user.credits} créditos`);
+
+    } catch (error) {
+      console.error('Erro ao processar webhook:', error);
+      return res.status(500).json({ error: 'Erro interno' });
+    }
+  }
+
+  res.json({ received: true });
+  return;
 });
 
 // @desc    Obter histórico de pagamentos
 // @route   GET /api/payments/history
 // @access  Private
-export const getPaymentHistory = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const getPaymentHistory = asyncHandler(async (req: Request, res: Response) => {
   const user = req.user as IUser;
 
-  if (!user.stripeCustomerId) {
+  if (!(user as any).stripeCustomerId) {
     res.json({
       success: true,
       data: {
@@ -134,7 +159,7 @@ export const getPaymentHistory = asyncHandler(async (req: Request, res: Response
   try {
     // Buscar pagamentos no Stripe
     const payments = await stripe.paymentIntents.list({
-      customer: user.stripeCustomerId,
+      customer: (user as any).stripeCustomerId,
       limit: 50
     });
 
@@ -146,8 +171,8 @@ export const getPaymentHistory = asyncHandler(async (req: Request, res: Response
         currency: payment.currency,
         status: payment.status,
         created: payment.created,
-        credits: payment.metadata.credits,
-        package: payment.metadata.package
+        credits: payment.metadata['credits'],
+        package: payment.metadata['package']
       }));
 
     res.json({
@@ -166,7 +191,7 @@ export const getPaymentHistory = asyncHandler(async (req: Request, res: Response
 // @desc    Obter pacotes disponíveis
 // @route   GET /api/payments/packages
 // @access  Public
-export const getPackages = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const getPackages = asyncHandler(async (_req: Request, res: Response) => {
   const packages = [
     {
       id: '100',

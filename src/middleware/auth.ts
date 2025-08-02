@@ -14,7 +14,7 @@ declare global {
 
 export const protect = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -31,7 +31,7 @@ export const protect = async (
     }
 
     // Verificar se o token é válido
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    const decoded = jwt.verify(token, process.env['JWT_SECRET']!) as any;
 
     // Buscar o usuário no banco
     const user = await User.findById(decoded.id).select('-password');
@@ -60,7 +60,7 @@ export const protect = async (
 
 // Middleware para verificar se o usuário tem créditos suficientes
 export const checkCredits = (requiredCredits: number = 1) => {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       next(createError('Usuário não autenticado.', 401));
       return;
@@ -76,7 +76,7 @@ export const checkCredits = (requiredCredits: number = 1) => {
 };
 
 // Middleware para verificar se o usuário é admin (opcional)
-export const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+export const requireAdmin = (req: Request, _res: Response, next: NextFunction): void => {
   if (!req.user) {
     next(createError('Usuário não autenticado.', 401));
     return;
@@ -94,7 +94,7 @@ export const requireAdmin = (req: Request, res: Response, next: NextFunction): v
 
 // Middleware para verificar se o usuário tem permissão para acessar um recurso
 export const checkOwnership = (resourceUserIdField: string = 'userId') => {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       next(createError('Usuário não autenticado.', 401));
       return;
@@ -102,7 +102,7 @@ export const checkOwnership = (resourceUserIdField: string = 'userId') => {
 
     const resourceUserId = (req.params as any)[resourceUserIdField] || (req.body as any)[resourceUserIdField];
 
-    if (resourceUserId && resourceUserId !== req.user._id.toString()) {
+    if (resourceUserId && resourceUserId !== (req.user._id as any).toString()) {
       next(createError('Acesso negado. Você não tem permissão para acessar este recurso.', 403));
       return;
     }
