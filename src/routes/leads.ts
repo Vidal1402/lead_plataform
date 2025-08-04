@@ -8,6 +8,15 @@ import {
   getLeadStats, 
   searchLeads 
 } from '../controllers/leadController';
+import {
+  generateLeadsRealtime,
+  getGenerationProgress,
+  stopGeneration,
+  downloadBatchCsv,
+  downloadSessionCsv,
+  getGenerationStats,
+  validateLeadGeneration
+} from '../controllers/leadGenerationController';
 import { protect } from '../middleware/auth';
 import { requireCredits } from '../middleware/creditCheck';
 
@@ -155,6 +164,40 @@ router.get('/stats', async (_req: Request, res: Response) => {
     });
   }
 });
+
+// ===== ROTAS DE GERAÇÃO EM TEMPO REAL =====
+
+// @route   POST /api/leads/generate-realtime
+// @desc    Iniciar geração de leads em tempo real
+// @access  Private
+router.post('/generate-realtime', protect, validateLeadGeneration, generateLeadsRealtime);
+
+// @route   GET /api/leads/progress/:sessionId
+// @desc    Obter progresso da geração
+// @access  Private
+router.get('/progress/:sessionId', protect, getGenerationProgress);
+
+// @route   POST /api/leads/stop/:sessionId
+// @desc    Parar geração de leads
+// @access  Private
+router.post('/stop/:sessionId', protect, stopGeneration);
+
+// @route   GET /api/leads/download-batch/:sessionId/:batchNumber
+// @desc    Download CSV de batch
+// @access  Private
+router.get('/download-batch/:sessionId/:batchNumber', protect, downloadBatchCsv);
+
+// @route   GET /api/leads/download-session/:sessionId
+// @desc    Download CSV completo da sessão
+// @access  Private
+router.get('/download-session/:sessionId', protect, downloadSessionCsv);
+
+// @route   GET /api/leads/generation-stats/:sessionId
+// @desc    Obter estatísticas da geração
+// @access  Private
+router.get('/generation-stats/:sessionId', protect, getGenerationStats);
+
+// ===== ROTAS EXISTENTES =====
 
 // @route   POST /api/leads/generate
 // @desc    Gerar leads com filtros (usa créditos)

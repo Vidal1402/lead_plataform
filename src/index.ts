@@ -4,9 +4,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
+import { webSocketManager } from './middleware/websocket';
 import authRoutes from './routes/auth';
 import leadRoutes from './routes/leads';
 import userRoutes from './routes/users';
@@ -15,7 +17,11 @@ import paymentRoutes from './routes/payments';
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const PORT = process.env['PORT'] || 5000;
+
+// Inicializar WebSocket
+webSocketManager.initialize(server);
 
 // Middleware de segurança
 app.use(helmet());
@@ -48,7 +54,8 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    websocket: webSocketManager.getConnectionStats()
   });
 });
 
@@ -59,9 +66,10 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`🚀 Servidor rodando na porta ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🔌 WebSocket disponível em: ws://localhost:${PORT}`);
     });
   } catch (error) {
     console.error('❌ Erro ao iniciar servidor:', error);

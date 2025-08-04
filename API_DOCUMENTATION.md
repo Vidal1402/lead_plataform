@@ -21,7 +21,197 @@ Authorization: Bearer <token>
 }
 ```
 
-## 2. Checkout com Stripe
+## 2. Geração de Leads em Tempo Real
+
+### Iniciar Geração de Leads
+```http
+POST /api/leads/generate-realtime
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "nicho": "estetica",
+  "cidade": "São Paulo",
+  "pais": "Brasil",
+  "quantidade": 100
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "session_1703123456789_user123",
+    "message": "Geração de leads iniciada",
+    "progressUrl": "/api/leads/progress/session_1703123456789_user123",
+    "websocketUrl": "/ws/leads/session_1703123456789_user123"
+  }
+}
+```
+
+### Obter Progresso da Geração
+```http
+GET /api/leads/progress/:sessionId
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "session_1703123456789_user123",
+    "progress": {
+      "totalRequested": 100,
+      "totalGenerated": 45,
+      "totalValid": 30,
+      "progress": 30,
+      "currentSource": "google_maps",
+      "status": "running"
+    }
+  }
+}
+```
+
+### Parar Geração
+```http
+POST /api/leads/stop/:sessionId
+Authorization: Bearer <token>
+```
+
+### Download CSV de Batch
+```http
+GET /api/leads/download-batch/:sessionId/:batchNumber
+Authorization: Bearer <token>
+```
+
+### Download CSV Completo da Sessão
+```http
+GET /api/leads/download-session/:sessionId
+Authorization: Bearer <token>
+```
+
+### Estatísticas da Geração
+```http
+GET /api/leads/generation-stats/:sessionId
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "session_1703123456789_user123",
+    "stats": {
+      "totalLeads": 100,
+      "bySource": {
+        "google_maps": 40,
+        "instagram": 25,
+        "telegram": 20,
+        "website": 15
+      },
+      "byScore": {
+        "high": 30,
+        "medium": 45,
+        "low": 25
+      },
+      "withPhone": 85,
+      "withEmail": 70,
+      "avgScore": 75
+    }
+  }
+}
+```
+
+## 3. WebSocket Events
+
+### Conectar ao WebSocket
+```javascript
+const socket = io('http://localhost:5000', {
+  auth: {
+    token: 'seu_jwt_token_aqui'
+  }
+});
+```
+
+### Eventos Disponíveis
+
+#### Entrar em Sessão de Geração
+```javascript
+socket.emit('join-generation', 'session_1703123456789_user123');
+```
+
+#### Receber Progresso
+```javascript
+socket.on('generation-progress', (progress) => {
+  console.log('Progresso:', progress);
+});
+```
+
+#### Receber Batch de Leads
+```javascript
+socket.on('leads-batch', (batchData) => {
+  console.log('Novo batch:', batchData);
+  // batchData.leads - array com 30 leads
+  // batchData.csvUrl - URL para download do CSV
+});
+```
+
+#### Geração Concluída
+```javascript
+socket.on('generation-completed', (completionData) => {
+  console.log('Geração concluída:', completionData);
+});
+```
+
+#### Erro na Geração
+```javascript
+socket.on('generation-error', (error) => {
+  console.error('Erro:', error);
+});
+```
+
+## 4. Fontes de Dados
+
+### Google Maps
+- **Dados extraídos:** Nome, telefone, site, email, endereço
+- **Score base:** 60-100
+- **Validação:** Nome + telefone OU email
+
+### Instagram
+- **Dados extraídos:** Nome, bio, telefone, email, site
+- **Score base:** 50-100
+- **Validação:** Nome + telefone OU email
+
+### Telegram
+- **Dados extraídos:** Nome do canal, descrição, telefone, email, site
+- **Score base:** 40-100
+- **Validação:** Nome + telefone OU email
+
+### Websites
+- **Dados extraídos:** Nome do negócio, telefone, email, endereço
+- **Score base:** 70-100
+- **Validação:** Nome + telefone OU email
+
+## 5. Validação de Leads
+
+### Critérios de Validação
+- **Nome:** Obrigatório, mínimo 2 caracteres
+- **Telefone:** Formato válido, mínimo 10 dígitos
+- **Email:** Formato válido de email
+- **Validação:** Lead é válido se tiver nome + (telefone OU email)
+
+### Cálculo de Score
+- **Score base:** 60 pontos
+- **Telefone:** +20 pontos
+- **Email:** +20 pontos
+- **Site:** +10 pontos
+- **Cidade:** +5 pontos
+- **Fonte:** +2-5 pontos (dependendo da confiabilidade)
+
+## 6. Checkout com Stripe
 
 ### Criar Checkout
 ```http
@@ -116,7 +306,7 @@ GET /api/payments/history
 Authorization: Bearer <token>
 ```
 
-## 3. Geração de Leads
+## 7. Geração de Leads (Legado)
 
 ### Gerar Leads (usa créditos)
 ```http
@@ -128,48 +318,23 @@ Content-Type: application/json
   "nicho": "estetica",
   "cidade": "São Paulo",
   "estado": "SP",
-  "pais": "Brasil",
   "idadeMin": 25,
   "idadeMax": 45,
   "includePhone": true,
-  "includeEmail": true,
   "limit": 100
 }
 ```
-
-**Filtros disponíveis:**
-- `nicho` (obrigatório): estetica, petshop, advocacia, medicina, educacao, tecnologia, financas, imoveis, automoveis, beleza, fitness, gastronomia, moda, turismo, outros
-- `cidade`: nome da cidade
-- `estado`: sigla do estado
-- `pais`: nome do país
-- `idadeMin`: idade mínima
-- `idadeMax`: idade máxima
-- `includePhone`: incluir telefone no CSV
-- `includeEmail`: incluir email no CSV
-- `limit`: quantidade de leads (usa créditos)
 
 **Response:**
 ```json
 {
   "success": true,
   "data": {
-    "leads": [
-      {
-        "nome": "João Silva",
-        "email": "joaosilva123@gmail.com",
-        "telefone": "+5511999999999",
-        "idade": 30,
-        "cidade": "São Paulo",
-        "estado": "SP",
-        "pais": "Brasil",
-        "nicho": "estetica",
-        "score": 85
-      }
-    ],
+    "leads": [...], // Preview dos primeiros 5
     "totalLeads": 100,
     "creditsUsed": 100,
     "remainingCredits": 900,
-    "csvUrl": "/api/leads/download/user_123_1234567890.csv"
+    "csvUrl": "/api/leads/download/..."
   }
 }
 ```
@@ -180,15 +345,9 @@ GET /api/leads/download/:filename
 Authorization: Bearer <token>
 ```
 
-### Buscar Leads (sem usar créditos)
+### Buscar Leads
 ```http
 GET /api/leads/search?nicho=estetica&cidade=São Paulo&limit=10
-Authorization: Bearer <token>
-```
-
-### Histórico de Buscas
-```http
-GET /api/leads/history
 Authorization: Bearer <token>
 ```
 
@@ -198,96 +357,81 @@ GET /api/leads/stats
 Authorization: Bearer <token>
 ```
 
-## 4. Serviços de Créditos
+## 8. Autenticação
 
-### CreditService
-```typescript
-// Adicionar créditos
-await CreditService.addCredits(userId, amount);
+### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
 
-// Debitar créditos
-await CreditService.debitCredits(userId, amount);
-
-// Verificar se tem créditos suficientes
-await CreditService.hasEnoughCredits(userId, amount);
-
-// Obter saldo
-await CreditService.getCredits(userId);
+{
+  "email": "test@leadforge.com",
+  "password": "123456"
+}
 ```
 
-## 5. Middleware de Verificação de Créditos
-
-### requireCredits
-```typescript
-// Verificar créditos antes de gerar leads
-router.post('/generate', requireAuth, requireCredits(), generateLeads);
-
-// Verificar créditos específicos
-router.post('/generate', requireAuth, requireCredits({ amount: 100 }), generateLeads);
-
-// Verificar créditos de campo específico
-router.post('/generate', requireAuth, requireCredits({ field: 'limit' }), generateLeads);
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "...",
+      "name": "Usuário Teste",
+      "email": "test@leadforge.com",
+      "credits": 1000
+    },
+    "token": "jwt_token_aqui"
+  }
+}
 ```
 
-## Configuração do Ambiente
+### Registro
+```http
+POST /api/auth/register
+Content-Type: application/json
 
-### Variáveis de Ambiente (.env)
-```env
-# Stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# MongoDB
-MONGODB_URI=mongodb+srv://...
-
-# JWT
-JWT_SECRET=sua_chave_jwt_super_secreta_aqui
-
-# Frontend URL
-FRONTEND_URL=http://localhost:3000
+{
+  "name": "Novo Usuário",
+  "email": "novo@email.com",
+  "password": "123456"
+}
 ```
 
-## Fluxo de Pagamento
+## 9. Health Check
 
-1. **Cliente solicita checkout:**
-   ```http
-   POST /api/payments/checkout
-   ```
+### Status do Servidor
+```http
+GET /health
+```
 
-2. **Stripe retorna URL de checkout**
+**Response:**
+```json
+{
+  "status": "OK",
+  "timestamp": "2023-12-21T10:30:00.000Z",
+  "version": "1.0.0",
+  "websocket": {
+    "totalConnections": 5,
+    "activeRooms": 3
+  }
+}
+```
 
-3. **Cliente redirecionado para Stripe**
+## 10. Códigos de Erro
 
-4. **Após pagamento, Stripe envia webhook:**
-   ```http
-   POST /api/payments/webhook
-   ```
+- `400` - Erro de validação
+- `401` - Não autorizado
+- `402` - Créditos insuficientes
+- `404` - Recurso não encontrado
+- `409` - Conflito (geração já em andamento)
+- `500` - Erro interno do servidor
 
-5. **Sistema adiciona créditos automaticamente**
+## 11. Limites e Restrições
 
-6. **Cliente pode gerar leads:**
-   ```http
-   POST /api/leads/generate
-   ```
-
-## Usuário de Teste
-
-**Email:** `test@leadforge.com`  
-**Senha:** `123456`  
-**Créditos:** 1000
-
-## Endpoints Resumidos
-
-| Método | Endpoint | Descrição | Autenticação |
-|--------|----------|-----------|--------------|
-| POST | `/api/payments/checkout` | Criar checkout | ✅ |
-| POST | `/api/payments/webhook` | Webhook Stripe | ❌ |
-| GET | `/api/payments/packages` | Listar pacotes | ❌ |
-| GET | `/api/payments/history` | Histórico pagamentos | ✅ |
-| POST | `/api/leads/generate` | Gerar leads | ✅ |
-| GET | `/api/leads/download/:filename` | Download CSV | ✅ |
-| GET | `/api/leads/search` | Buscar leads | ✅ |
-| GET | `/api/leads/history` | Histórico buscas | ✅ |
-| GET | `/api/leads/stats` | Estatísticas | ✅ |
-| GET | `/api/users/credits` | Verificar créditos | ✅ | 
+- **Quantidade máxima:** 1000 leads por geração
+- **Tamanho do batch:** 30 leads por vez
+- **Rate limiting:** 100 requests por 15 minutos
+- **Tamanho do arquivo:** 10MB máximo
+- **Tempo de sessão:** 24 horas
+- **Arquivos CSV:** Auto-deletados após 24 horas 
