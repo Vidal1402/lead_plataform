@@ -33,7 +33,8 @@ export const generateLeads = asyncHandler(async (req: Request, res: Response) =>
   // Construir query de busca
   const query: any = {
     isActive: true,
-    nicho: filters.nicho
+    nicho: filters.nicho,
+    userId: (user._id as any)
   };
 
   if (filters.cidade) {
@@ -147,14 +148,17 @@ export const downloadCsv = asyncHandler(async (req: Request, res: Response) => {
 // @desc    Obter histórico de buscas
 // @route   GET /api/leads/history
 // @access  Private
-export const getSearchHistory = asyncHandler(async (_req: Request, res: Response) => {
-  // Por enquanto, retornar histórico vazio
-  // TODO: Implementar histórico de buscas no modelo User
+export const getSearchHistory = asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req.user as any)._id;
+  
+  // Por enquanto, retornar histórico vazio específico do usuário
+  // TODO: Implementar histórico de buscas no modelo User ou criar modelo SearchHistory
   res.json({
     success: true,
     data: {
       history: [],
-      totalSearches: 0
+      totalSearches: 0,
+      userId: userId
     }
   });
 });
@@ -162,9 +166,11 @@ export const getSearchHistory = asyncHandler(async (_req: Request, res: Response
 // @desc    Obter estatísticas de leads
 // @route   GET /api/leads/stats
 // @access  Private
-export const getLeadStats = asyncHandler(async (_req: Request, res: Response) => {
+export const getLeadStats = asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req.user as any)._id;
+
   const stats = await Lead.aggregate([
-    { $match: { isActive: true } },
+    { $match: { isActive: true, userId: userId } },
     {
       $group: {
         _id: null,
@@ -176,7 +182,7 @@ export const getLeadStats = asyncHandler(async (_req: Request, res: Response) =>
   ]);
 
   const nichoStats = await Lead.aggregate([
-    { $match: { isActive: true } },
+    { $match: { isActive: true, userId: userId } },
     {
       $group: {
         _id: '$nicho',
@@ -203,8 +209,9 @@ export const getLeadStats = asyncHandler(async (_req: Request, res: Response) =>
 // @access  Private
 export const searchLeads = asyncHandler(async (req: Request, res: Response) => {
   const { nicho, cidade, estado, pais, idadeMin, idadeMax, limit = 10 } = req.query;
+  const userId = (req.user as any)._id;
 
-  const query: any = { isActive: true };
+  const query: any = { isActive: true, userId: userId };
 
   if (nicho) query.nicho = nicho;
   if (cidade) query.cidade = { $regex: cidade as string, $options: 'i' };

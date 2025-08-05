@@ -23,7 +23,7 @@ import { requireCredits } from '../middleware/creditCheck';
 const router = express.Router();
 
 // Buscar leads com filtros
-router.get('/', [
+router.get('/', protect, [
   query('page').optional().isInt({ min: 1 }).withMessage('Página deve ser um número positivo'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limite deve ser entre 1 e 100'),
   query('nicho').optional().isString().withMessage('Nicho deve ser uma string'),
@@ -56,7 +56,7 @@ router.get('/', [
     } = req.query;
 
     // Construir filtros
-    const filters: any = { isActive: true };
+    const filters: any = { isActive: true, userId: (req.user as any)._id };
 
     if (nicho) filters.nicho = nicho;
     if (cidade) filters.cidade = new RegExp(cidade as string, 'i');
@@ -112,10 +112,12 @@ router.get('/', [
 });
 
 // Buscar estatísticas
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', protect, async (req: Request, res: Response) => {
   try {
+    const userId = (req.user as any)._id;
+
     const stats = await Lead.aggregate([
-      { $match: { isActive: true } },
+      { $match: { isActive: true, userId: userId } },
       {
         $group: {
           _id: null,
@@ -127,7 +129,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
     ]);
 
     const nichoStats = await Lead.aggregate([
-      { $match: { isActive: true } },
+      { $match: { isActive: true, userId: userId } },
       {
         $group: {
           _id: '$nicho',
@@ -138,7 +140,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
     ]);
 
     const estadoStats = await Lead.aggregate([
-      { $match: { isActive: true } },
+      { $match: { isActive: true, userId: userId } },
       {
         $group: {
           _id: '$estado',

@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ILead extends Document {
+  userId: mongoose.Types.ObjectId;
   nome: string;
   email: string;
   telefone?: string;
@@ -18,6 +19,11 @@ export interface ILead extends Document {
 }
 
 const leadSchema = new Schema<ILead>({
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'UserId é obrigatório']
+  },
   nome: {
     type: String,
     required: [true, 'Nome é obrigatório'],
@@ -97,6 +103,7 @@ const leadSchema = new Schema<ILead>({
 });
 
 // Índices para performance
+leadSchema.index({ userId: 1 });
 leadSchema.index({ email: 1 });
 leadSchema.index({ nicho: 1 });
 leadSchema.index({ cidade: 1 });
