@@ -21,7 +21,7 @@ export const protect = async (
     let token: string | undefined;
 
     // Verificar se o token está no header Authorization
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
       token = req.headers.authorization.split(' ')[1];
     }
 
@@ -34,7 +34,7 @@ export const protect = async (
     const decoded = jwt.verify(token, process.env['JWT_SECRET']!) as any;
 
     // Buscar o usuário no banco
-    const user = await User.findById(decoded.id).select('-password');
+    const user = await User.findById(decoded.userId).select('-password');
 
     if (!user) {
       throw createError('Usuário não encontrado.', 401);

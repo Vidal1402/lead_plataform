@@ -5,22 +5,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const bcrypt = require('bcryptjs');
+
 const nichos = [
-  'estetica',
-  'petshop',
-  'advocacia',
-  'medicina',
-  'educacao',
-  'tecnologia',
-  'financas',
-  'imoveis',
-  'automoveis',
-  'beleza',
-  'fitness',
-  'gastronomia',
-  'moda',
-  'turismo',
-  'outros'
+  'estetica', 'petshop', 'advocacia', 'medicina', 'educacao',
+  'tecnologia', 'financas', 'imoveis', 'automoveis', 'beleza',
+  'fitness', 'gastronomia', 'moda', 'turismo', 'outros'
 ];
 
 const cidades = [
@@ -53,7 +43,6 @@ const gerarTelefone = (): string => {
 };
 
 const gerarEmail = (nome: string): string => {
-  // Remove acentos e caracteres especiais
   const nomeLimpo = nome.toLowerCase()
     .replace(/\s+/g, '')
     .replace(/[àáâãäå]/g, 'a')
@@ -88,74 +77,52 @@ const gerarLead = () => {
     origem: 'seed_data',
     dataInsercao: new Date(),
     isActive: true,
-    score: Math.floor(Math.random() * 40) + 60 // Score entre 60-100
+    score: Math.floor(Math.random() * 40) + 60
   };
 };
 
-const seedLeads = async (quantidade: number = 1000) => {
+const seed = async () => {
   try {
-    console.log('🌱 Iniciando seed de leads...');
-
-    // Limpar leads existentes
-    await Lead.deleteMany({ origem: 'seed_data' });
-    console.log('🗑️ Leads antigos removidos');
-
-    // Gerar leads
-    const leads = [];
-    for (let i = 0; i < quantidade; i++) {
-      leads.push(gerarLead());
-    }
-
-    // Inserir em lotes de 100
-    const lotes = [];
-    for (let i = 0; i < leads.length; i += 100) {
-      lotes.push(leads.slice(i, i + 100));
-    }
-
-    for (const lote of lotes) {
-      await Lead.insertMany(lote);
-    }
-
-    console.log(`✅ ${quantidade} leads criados com sucesso!`);
-  } catch (error) {
-    console.error('❌ Erro ao criar leads:', error);
-  }
-};
-
-const seedUsers = async () => {
-  try {
-    console.log('🌱 Iniciando seed de usuários...');
+    await mongoose.connect(process.env['MONGODB_URI']!);
+    console.log('✅ Conectado ao MongoDB');
 
     // Limpar usuários de teste
     await User.deleteMany({ email: { $regex: /test@/ } });
     console.log('🗑️ Usuários de teste removidos');
 
-    // Criar usuário de teste
+    // Criar usuário de teste com hash
+    const passwordHash = bcrypt.hashSync('123456', 10);
     const testUser = await User.create({
       name: 'Usuário Teste',
       email: 'test@leadforge.com',
-      password: '123456',
-      credits: 1000
+      password: passwordHash,
+      credits: 1000,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
-
     console.log(`✅ Usuário de teste criado: ${testUser.email}`);
     console.log(`🔑 Senha: 123456`);
-  } catch (error) {
-    console.error('❌ Erro ao criar usuário:', error);
-  }
-};
 
-const main = async () => {
-  try {
-    // Conectar ao MongoDB
-    await mongoose.connect(process.env['MONGODB_URI']!);
-    console.log('✅ Conectado ao MongoDB');
+    // Limpar leads antigos
+    await Lead.deleteMany({ origem: 'seed_data' });
+    console.log('🗑️ Leads antigos removidos');
 
-    // Seed de usuários
-    await seedUsers();
+    // Criar novos leads com associação ao usuário
+    const leads = [];
+    for (let i = 0; i < 1000; i++) {
+      const leadData = gerarLead();
+      leads.push({
+        ...leadData,
+        userId: testUser._id,
+        origem: 'seed_data',
+        dataInsercao: new Date(),
+        isActive: true
+      });
+    }
 
-    // Seed de leads
-    await seedLeads(1000);
+    await Lead.insertMany(leads);
+    console.log(`✅ ${leads.length} leads criados com sucesso!`);
 
     console.log('🎉 Seed concluído com sucesso!');
     process.exit(0);
@@ -167,5 +134,5 @@ const main = async () => {
 
 // Executar se chamado diretamente
 if (require.main === module) {
-  main();
-} 
+  seed();
+}
